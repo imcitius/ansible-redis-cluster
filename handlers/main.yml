@@ -1,0 +1,20 @@
+---
+# handlers file for redis.role
+
+- name: restart redis slaves
+  service: name=redis state=restarted enabled=yes
+  when: ansible_virtualization_type != 'docker' and not redis_master
+  listen: restart redis cluster
+
+- name: restart redis master
+  service: name=redis state=restarted enabled=yes
+  when: ansible_virtualization_type != 'docker' and not redis_master
+  listen: restart redis cluster
+
+- name: restart sentinel
+  service: name=redis-sentinel state=restarted enabled=yes
+  when: ansible_virtualization_type != 'docker'
+
+- name: restart haproxy
+  systemd: state=restarted name=haproxy enabled=yes
+

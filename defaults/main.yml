@@ -1,0 +1,191 @@
+---
+# defaults file for redis.role
+
+redis_bind_address: "{{ consul_client_address }}"
+
+haproxy_port: "6379"
+haproxy_bind_address: "{{ consul_client_address }}"
+
+redis_config: "redis.conf"
+redis_cluster_name: "redis-cluster"
+
+# presume redis is not installed
+redis_present: false
+redis_started: false
+redis_sentinel_exists: false
+redis_sentinel_started: false
+redis_master: false
+redis_master_ip: 127.0.0.1
+
+# config templates
+haproxy_base_config: |
+  global
+    chroot  /var/lib/haproxy
+    daemon
+    group  haproxy
+    maxconn  4000
+    pidfile  /var/run/haproxy.pid
+    user  haproxy
+
+  defaults
+    log  global
+    maxconn  4000
+    option  redispatch
+    retries  3
+    timeout  http-request 10s
+    timeout  queue 1m
+    timeout  connect 10s
+    timeout  client 1m
+    timeout  server 1m
+    timeout  check 10s
+
+  listen stats 
+    bind {{ haproxy_bind_address }}:9000  # Listen on localhost:9000
+  mode http
+  stats enable  # Enable stats page
+  stats hide-version  # Hide HAProxy version
+  stats realm Haproxy\ Statistics  # Title text for popup window
+  stats uri /haproxy_stats  # Stats URI
+  stats auth admin:{{ haproxy_admin_password }}  # Authentication credentials
+
+haproxy_service_config: |
+  listen redis-cluster
+  bind 0.0.0.0:{{ haproxy_port }}
+  mode tcp
+  option tcplog
+  option tcp-check
+  tcp-check connect
+  tcp-check send PING\r\n
+  tcp-check expect string +PONG
+  tcp-check send info\ replication\r\n
+  tcp-check expect string role:master
+  tcp-check send QUIT\r\n
+  tcp-check expect string +OK
+    {% for host in play_hosts %}
+
+    server {{ host }} {{ host }}:{{ redis_listen_port }} check inter 1s on-marked-down shutdown-sessions
+
+    {% endfor %}
+
+redis_sentinel_monitor:
+  down_after_milliseconds: 3000
+  parallel_syncs: 2
+  failover_timeout: 30000
+  notification_script: false
+  client_reconfig_script: false
+
+
+
+# The open file limit for Redis/Sentinel
+redis_nofile_limit: 16384
+redis_oom_score_adjust: 0
+
+## Role options
+# Configure Redis as a service
+# This creates the init scripts for Redis and ensures the process is running
+# Also applies for Redis Sentinel
+redis_as_service: true
+# Add local facts to /etc/ansible/facts.d for Redis
+redis_local_facts: true
+# Service name
+redis_service_name: "redis_{{ redis_port }}"
+
+## Networking/connection options
+redis_bind: false
+redis_listen_port: 16379
+redis_password: false
+# Slave replication options
+redis_min_slaves_to_write: 0
+redis_min_slaves_max_lag: 10
+redis_tcp_backlog: 511
+redis_tcp_keepalive: 0
+# Max connected clients at a time
+redis_maxclients: 10000
+redis_timeout: 0
+# Socket options
+# Set socket_path to the desired path to the socket. E.g. /var/run/redis/{{ redis_port }}.sock
+redis_socket_path: false
+redis_socket_perm: 755
+
+## Replication options
+# Set slaveof just as you would in redis.conf. (e.g. "redis01 6379")
+redis_slaveof: false
+# Make slaves read-only. "yes" or "no"
+redis_slave_read_only: "yes"
+redis_slave_priority: 100
+redis_repl_backlog_size: false
+
+## Logging
+redis_logfile: '""'
+# Enable syslog. "yes" or "no"
+redis_syslog_enabled: "yes"
+redis_syslog_ident: "{{ redis_service_name }}"
+# Syslog facility. Must be USER or LOCAL0-LOCAL7
+redis_syslog_facility: USER
+
+## General configuration
+redis_daemonize: "yes"
+redis_pidfile: /var/run/redis/{{ redis_port }}.pid
+# Number of databases to allow
+redis_databases: 16
+redis_loglevel: notice
+# Log queries slower than this many milliseconds. -1 to disable
+redis_slowlog_log_slower_than: 10000
+# Maximum number of slow queries to save
+redis_slowlog_max_len: 128
+# Redis memory limit (e.g. 4294967296, 4096mb, 4gb)
+redis_maxmemory: false
+redis_maxmemory_policy: noeviction
+redis_rename_commands: []
+
+# Lua script time limit
+redis_lua_time_limit: 5000
+
+# the file name for the RDB Backup
+redis_db_filename: "dump.rdb"
+
+# How frequently to snapshot the database to disk
+# e.g. "900 1" => 900 seconds if at least 1 key changed
+redis_save:
+  - 900 1
+  - 300 10
+  - 60 10000
+redis_stop_writes_on_bgsave_error: "yes"
+redis_rdbcompression: "yes"
+redis_rdbchecksum: "yes"
+redis_appendonly: "no"
+redis_appendfilename: "appendonly.aof"
+redis_appendfsync: "everysec"
+redis_no_appendfsync_on_rewrite: "no"
+redis_auto_aof_rewrite_percentage: "100"
+redis_auto_aof_rewrite_min_size: "64mb"
+redis_notify_keyspace_events: '""'
+
+redis_client_output_buffer_limit_normal: 0 0 0
+redis_client_output_buffer_limit_slave: 256mb 64mb 60
+redis_client_output_buffer_limit_pubsub: 32mb 8mb 60
+
+redis_hz: 10
+
+## Redis sentinel configs
+# Set this to true on a host to configure it as a Sentinel
+redis_sentinel: false
+redis_sentinel_dir: /var/lib/redis/sentinel_{{ redis_sentinel_port }}
+redis_sentinel_bind: 0.0.0.0
+redis_sentinel_port: 26379
+redis_sentinel_password: false
+redis_sentinel_pidfile: /var/run/redis/sentinel_{{ redis_sentinel_port }}.pid
+redis_sentinel_logfile: '""'
+redis_sentinel_syslog_ident: sentinel_{{ redis_sentinel_port }}
+redis_sentinel_oom_score_adjust: 0
+redis_sentinel_monitors:
+  - name: master01
+    host: localhost
+    port: 6379
+    quorum: 2
+    auth_pass: ant1r3z
+    down_after_milliseconds: 3000
+    parallel_syncs: 1
+    failover_timeout: 30000
+    notification_script: false
+    client_reconfig_script: false

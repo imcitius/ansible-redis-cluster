@@ -1,0 +1,16 @@
+galaxy_info:
+  author: Ilya Rubinchik
+  description: Configure redis cluster using redis-sentinel.
+  license: GPLv2
+  min_ansible_version: 2.6
+  platforms:
+  - name: EL
+    versions:
+      - 7
+  - name: Fedora
+  galaxy_tags: []
+
+dependencies:
+  - name: redis.role
+    src: git@github.com:imcitius/ansible-redis.git
+    scm: git

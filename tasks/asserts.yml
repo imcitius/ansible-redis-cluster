@@ -1,0 +1,66 @@
+- name: detect if redis installed
+  block:
+    - name: collect package files
+      package_facts:
+        manager: "auto"
+
+    - name: detect if redis installed
+      set_fact:
+        redis_present: true
+      when: "'redis' in ansible_facts.packages"
+
+- name: detect if redis and sentinel started
+  block:
+    - name: populate service facts
+      service_facts:
+      when: redis_present
+
+    - name: detect if redis started
+      set_fact:
+        redis_started: true
+      when: redis_present and "ansible_facts.services['redis.service']['state'] == 'running'"
+
+    - name: check redis-sentinel service exists
+      set_fact:
+        redis_sentinel_exists: true
+      when: redis_present and ansible_facts.services['redis-sentinel.service'] is defined
+
+    - name: detect if redis-sentinel started
+      set_fact:
+        redis_sentinel_started: true
+      when: redis_sentinel_exists
+
+- name: detect current redis master
+  block:
+    - name: get cluster master
+      shell: redis-cli -h 127.0.0.1 -p 26379 info|grep status | cut -d "," -f 3 | sed 's/address=\(.*\):\(.*\)/\1/g'
+      register: redis_sentinel_master_address
+      tags: skip_ansible_lint
+      when: redis_started and redis_sentinel_started
+
+    - debug: var=redis_sentinel_master_address
+
+    - name: set current master in fact
+      set_fact:
+        redis_master: true
+      when: redis_sentinel_master_address.changed and redis_sentinel_master_address.stdout and redis_bind_address == redis_sentinel_master_address.stdout
+
+    - name: set current master ip in fact
+      set_fact:
+        redis_master_ip: "{{ redis_sentinel_master_address.stdout }}"
+      when: redis_sentinel_master_address.changed and redis_sentinel_master_address.stdout
+
+    - name: or use default first host
+      set_fact:
+        redis_master: true
+      when: redis_master_ip == '127.0.0.1' and inventory_hostname == play_hosts[0]
+
+    - name: and remember master's ip
+      set_fact:
+        redis_master_ip: "{{ hostvars[play_hosts.0]['ansible_default_ipv4']['address'] }}"
+      when: redis_master_ip == '127.0.0.1'
+
+    - name: fill SLAVEOF
+      set_fact:
+        redis_slaveof: "{{ redis_master_ip }} {{ redis_listen_port }}"
+      when: not redis_master
