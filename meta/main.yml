@@ -11,6 +11,4 @@ galaxy_info:
   galaxy_tags: []
 
 dependencies:
-  - name: redis.role
-    src: git@github.com:imcitius/ansible-redis.git
-    scm: git
+  - { role: imcitius.ansible_redis }
