@@ -7,8 +7,6 @@ galaxy_info:
   - name: EL
     versions:
       - 7
-  - name: Fedora
   galaxy_tags: []
 
-dependencies:
-  - { role: imcitius.ansible_redis }
+dependencies: []

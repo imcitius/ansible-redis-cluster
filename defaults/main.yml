@@ -4,6 +4,7 @@
 redis_bind_address: "{{ consul_client_address }}"
 
 haproxy_port: "6379"
+haproxy_tls_port: "6380"
 haproxy_bind_address: "{{ consul_client_address }}"
 
 redis_config: "redis.conf"
@@ -17,6 +18,9 @@ redis_sentinel_started: false
 redis_master: false
 redis_master_ip: 127.0.0.1
 
+redis_tls_enable: false 
+redis_tls_auth_clients_enable: false
+
 # config templates
 haproxy_base_config: |
   global
@@ -27,17 +31,20 @@ haproxy_base_config: |
     pidfile  /var/run/haproxy.pid
     user  haproxy
 
+    ca-base /etc/custom-ssl
+    crt-base /etc/custom-ssl
+
   defaults
     log  global
     maxconn  4000
     option  redispatch
     retries  3
     timeout  http-request 10s
-    timeout  queue 1m
-    timeout  connect 10s
-    timeout  client 1m
-    timeout  server 1m
-    timeout  check 10s
+    timeout  queue 5s
+    timeout  connect 1s
+    timeout  client 60s
+    timeout  server 5s
+    timeout  check 1s
 
   listen stats 
     bind {{ haproxy_bind_address }}:9000  # Listen on localhost:9000
@@ -53,7 +60,7 @@ haproxy_service_config: |
   bind 0.0.0.0:{{ haproxy_port }}
   mode tcp
   option tcplog
-  option tcp-check
+  option tcp-check connect {{ redis_listen_port }}
   tcp-check connect
   tcp-check send PING\r\n
   tcp-check expect string +PONG
@@ -62,19 +69,34 @@ haproxy_service_config: |
   tcp-check send QUIT\r\n
   tcp-check expect string +OK
     {% for host in play_hosts %}
-
-    server {{ host }} {{ host }}:{{ redis_listen_port }} check inter 1s on-marked-down shutdown-sessions
-
+    server {{ host }} {{ host }}:{{ redis_listen_port }} check
     {% endfor %}
+    default-server  on-marked-down shutdown-sessions
+
+haproxy_tls_service_config: |
+  listen redis-cluster-tls
+  bind 0.0.0.0:{{ haproxy_tls_port }} ssl crt {{ cluster_tls_server_crt_bundle }} {% if redis_tls_auth_clients_enable | bool %} verify required {% else %} verify none {% endif %}
+  mode tcp
+  option tcplog
+  option tcp-check
+  tcp-check connect port {{ redis_listen_port }}
+  tcp-check send PING\r\n
+  tcp-check expect string +PONG
+  tcp-check send info\ replication\r\n
+  tcp-check expect string role:master
+  tcp-check send QUIT\r\n
+  tcp-check expect string +OK
+    {% for host in play_hosts %}
+    server {{ host }} {{ host }}:{{ redis_tls_listen_port }} check ssl verify none
+    {% endfor %}
+    default-server on-marked-down shutdown-sessions
 
 redis_sentinel_monitor:
-  down_after_milliseconds: 3000
+  down_after_milliseconds: 5000
   parallel_syncs: 2
-  failover_timeout: 30000
+  failover_timeout: 60000
   notification_script: false
   client_reconfig_script: false
-
-
 
 # The open file limit for Redis/Sentinel
 redis_nofile_limit: 16384
@@ -92,7 +114,8 @@ redis_service_name: "redis_{{ redis_port }}"
 
 ## Networking/connection options
 redis_bind: false
-redis_listen_port: 16379
+redis_listen_port: 6379
+redis_tls_listen_port: 6380
 redis_password: false
 # Slave replication options
 redis_min_slaves_to_write: 0
@@ -109,7 +132,7 @@ redis_socket_perm: 755
 
 ## Replication options
 # Set slaveof just as you would in redis.conf. (e.g. "redis01 6379")
-redis_slaveof: false
+# redis_slaveof: false
 # Make slaves read-only. "yes" or "no"
 redis_slave_read_only: "yes"
 redis_slave_priority: 100
@@ -146,10 +169,11 @@ redis_db_filename: "dump.rdb"
 
 # How frequently to snapshot the database to disk
 # e.g. "900 1" => 900 seconds if at least 1 key changed
-redis_save:
-  - 900 1
-  - 300 10
-  - 60 10000
+redis_save: |
+  save 300 2000
+  save 60 3000
+  save 900 1000
+
 redis_stop_writes_on_bgsave_error: "yes"
 redis_rdbcompression: "yes"
 redis_rdbchecksum: "yes"

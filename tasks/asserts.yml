@@ -33,22 +33,29 @@
 - name: detect current redis master
   block:
     - name: get cluster master
-      shell: redis-cli -h 127.0.0.1 -p 26379 info|grep status | cut -d "," -f 3 | sed 's/address=\(.*\):\(.*\)/\1/g'
-      register: redis_sentinel_master_address
+      shell: redis-cli -h 127.0.0.1 -p {{ redis_listen_port }} info replication | grep role:master
+      register: redis_sentinel_is_master
       tags: skip_ansible_lint
       when: redis_started and redis_sentinel_started
-
-    - debug: var=redis_sentinel_master_address
+      ignore_errors: true
 
     - name: set current master in fact
       set_fact:
         redis_master: true
-      when: redis_sentinel_master_address.changed and redis_sentinel_master_address.stdout and redis_bind_address == redis_sentinel_master_address.stdout
+      when: redis_sentinel_is_master.rc == 0
+      run_once: true
 
     - name: set current master ip in fact
       set_fact:
-        redis_master_ip: "{{ redis_sentinel_master_address.stdout }}"
-      when: redis_sentinel_master_address.changed and redis_sentinel_master_address.stdout
+        redis_master_ip: "{{ inventory_hostname }}"
+      when: redis_master
+      run_once: true
+
+    - name: set current master name in fact
+      set_fact:
+        redis_master_name: "{{ ansible_hostname }}"
+      when: redis_master
+      run_once: true
 
     - name: or use default first host
       set_fact:
@@ -58,9 +65,11 @@
     - name: and remember master's ip
       set_fact:
         redis_master_ip: "{{ hostvars[play_hosts.0]['ansible_default_ipv4']['address'] }}"
+        redis_master_name: "{{ hostvars[play_hosts.0]['hostname'] }}"
       when: redis_master_ip == '127.0.0.1'
+      run_once: true
 
-    - name: fill SLAVEOF
-      set_fact:
-        redis_slaveof: "{{ redis_master_ip }} {{ redis_listen_port }}"
-      when: not redis_master
+    # - name: fill SLAVEOF
+    #   set_fact:
+    #     redis_slaveof: "{{ redis_master_ip }}"
+    #   when: not redis_master

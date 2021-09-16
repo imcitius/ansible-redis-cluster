@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 ExecStart=/usr/bin/sh -c echo never > /sys/kernel/mm/transparent_hugepage/enabled
-ExecStart=/usr/bin/redis-server /etc/redis.conf --supervised systemd
+ExecStart=/usr/bin/redis-server /etc/redis/redis.conf --supervised systemd
 ExecStop=/usr/libexec/redis-shutdown
 Type=oneshot
 User=redis
